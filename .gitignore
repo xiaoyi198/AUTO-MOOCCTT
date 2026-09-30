@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 运行时目录（状态/日志/锁/浏览器 profile，包含登录态，绝对不能提交）
+browser-profile/
+browser-profile-experiment/
+learn-state.json
+learn-state.json.bak
+subject-queue.json
+credit-baseline.json
+credit-history.jsonl
+learn-log.txt
+guardian.lock
+guardian-shot.png
+runtime.json
+status.json
+evidence/
+plan.json
+plan.md
+plan-input.json
+*.tmp
+
+# 系统
+.DS_Store
+Thumbs.db

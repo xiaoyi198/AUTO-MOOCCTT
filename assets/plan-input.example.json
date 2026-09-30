@@ -1,0 +1,108 @@
+{
+  "_说明": [
+    "排期输入样例。用法：cp 本文件到运行时目录改名 plan-input.json，按你的平台改内容，再跑：",
+    "  node scripts/plan.js --in <运行时目录>/plan-input.json --out <运行时目录>",
+    "字段含义见 references/planning-rules.md。",
+    "关键：eligibleHours 只填【必须要学】的课对应学时——选修门槛为 0 学时时，选修学时不算。",
+    "关键：actualVideoHours 是实测播放时长，用于性价比排序；没测过就留空（会被标注'未实测'）。",
+    "注意：下面所有专题名、学时时长与 UUID 均为占位示例，请替换为你自己探测到的真实值。"
+  ],
+
+  "targets": [
+    { "key": "selfStudy", "label": "网络自学（时）", "target": 50, "done": 12.5 },
+    { "key": "central", "label": "集中培训（时）", "target": 90, "done": 30.0 }
+  ],
+
+  "settlement": {
+    "fullGoesTo": "central",
+    "holdLastGoesTo": "selfStudy",
+    "holdLastContribution": "whole"
+  },
+
+  "catalog": [
+    {
+      "name": "示例专题 A（学完整专题才结算）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000001",
+      "hours": 25.4,
+      "eligibleHours": 25.4,
+      "requiredCourses": 15,
+      "actualVideoHours": 22,
+      "preference": "holdLast"
+    },
+    {
+      "name": "示例专题 B（计划留尾，走另一个口径）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000002",
+      "hours": 26.4,
+      "requiredCourses": 16,
+      "actualVideoHours": 19,
+      "preference": "holdLast"
+    },
+    {
+      "name": "示例专题 C（页面标 23.9，但选修门槛为 0 学时，实际只有必修 2 门的 6.1 计入）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000003",
+      "hours": 23.9,
+      "eligibleHours": 6.1,
+      "requiredCourses": 2,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 D",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000004",
+      "hours": 4,
+      "requiredCourses": 10,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 E",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000005",
+      "hours": 7.3,
+      "requiredCourses": 20,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 F",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000006",
+      "hours": 6.3,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 G",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000007",
+      "hours": 6.9,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 H",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000008",
+      "hours": 6.5,
+      "preference": "full"
+    }
+  ],
+
+  "fallback": [
+    {
+      "name": "示例专题 I（主清单用尽后启用）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-000000000009",
+      "hours": 5.4,
+      "preference": "full"
+    },
+    {
+      "name": "示例专题 J（主清单用尽后启用）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-00000000000a",
+      "hours": 16.3,
+      "preference": "holdLast"
+    },
+    {
+      "name": "示例专题 K（体量大，兜底储备）",
+      "hash": "#/study/subject/detail/00000000-0000-4000-8000-00000000000b",
+      "hours": 34.6,
+      "preference": "full"
+    }
+  ],
+
+  "options": {
+    "minutesPerCreditHour": 50,
+    "defaultCreditsPerVideoHour": 1.0,
+    "checkIntervalMinutes": 15
+  }
+}
