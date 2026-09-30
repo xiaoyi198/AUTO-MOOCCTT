@@ -120,7 +120,8 @@ node scripts/engine/guardian.js --adapter <平台id> --dir <运行时目录> --n
 ### 阶段 5 · 无人值守
 
 按 `references/unattended-ops.md` 部署**自续期的一次性任务链**（15 分钟精度）
-+ **一条每小时兜底循环任务**。每环 prompt 四步：执行 → 按 STATUS 分派 → 自清理过期环 → 续期。
++ **一条每小时兜底循环任务**。每环 prompt 四步：执行 → 按 STATUS 分派 → 续期 → 自清理过期环
+（**必须先建下一环再删过期环**，顺序反了会断链）。
 
 只有 `ALL_DONE` 才停止续期。`NEED_HELP` 先重跑一次（引擎自带自愈），仍失败才通知用户。
 
