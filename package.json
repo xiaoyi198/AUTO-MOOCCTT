@@ -2,6 +2,7 @@
   "name": "course-hours-autopilot",
   "version": "0.2.0",
   "description": "模型辅助型学时自动化值守 Skill：Skill 提供示例脚本，模型探测并完善，确定性引擎无人值守执行。",
+  "license": "MIT",
   "scripts": {
     "launch": "node scripts/engine/launch.js",
     "status": "node scripts/engine/launch.js --status",

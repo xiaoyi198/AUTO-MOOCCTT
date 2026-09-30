@@ -181,6 +181,7 @@ node scripts/engine/guardian.js --adapter <平台id> --dir <运行时目录> --n
 course-hours-autopilot/
 ├── SKILL.md
 ├── README.md
+├── LICENSE
 ├── package.json
 ├── .gitignore
 ├── scripts/
