@@ -35,6 +35,29 @@ sh scripts/run-guardian.sh --dir . --no-launch
 
 完整流程、STATUS 契约、无人值守部署、**每轮唤醒模型该做什么**，见 [`SKILL.md`](SKILL.md)。
 
+## 懒得自己敲命令？把这段话发给你的 Agent
+
+本项目本来就是给 Agent 用的，你完全可以把下面这段原样复制给支持**技能安装 + 定时任务**的 Agent（例如 WorkBuddy / DSH），让它替你配置：
+
+```text
+请帮我安装并配置这个 Skill：https://github.com/xiaoyi198/AUTO-MOOCCTT
+
+要求：
+1. 先完整读一遍仓库里的 SKILL.md 和 references/ 下的文档，按它的流程来，不要凭猜测操作。
+2. 装依赖（npm i puppeteer-core），确认本机有 Edge/Chrome/Chromium 可用。
+3. 起受管浏览器（node scripts/engine/launch.js），然后叫我手工登录一次目标平台。
+4. 我登录完，你用 probe.js 侦察平台，核对/完善 scripts/adapters/ 里的适配器。
+5. 帮我填好 plan-input.json 并跑 plan.js 排期，把 plan.md 给我确认后再开跑。
+6. 先单轮验证（sh scripts/run-guardian.sh --dir . --no-launch），确认末行 STATUS 合理
+   再部署定时任务；验证不过就先修，不要急着挂定时。
+7. 之后按 SKILL.md 的部署方式跑：每 15 分钟一次主巡检 + 每小时一条独立兜底。
+   只有 STATUS:ALL_DONE（学时真正达标）才停；TARGET_NOT_REACHED 要接着补专题或修脚本；
+   NEED_HELP 先重跑一次，仍失败再来找我。
+8. 需要扫码 / 验证码 / 重新登录这种我才能做的事，直接告诉我，别自己硬试。
+```
+
+Agent 会把「探测 → 完善脚本 → 单轮验证 → 定时值守」这套走完，你只需要在它叫你登录的时候露个面。
+
 ## 环境要求
 
 - Node.js ≥ 18
