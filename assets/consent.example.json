@@ -1,0 +1,8 @@
+{
+  "disclaimerVersion": "1.0",
+  "confirmedAt": "<ISO 时间>",
+  "confirmedBy": "<用户标识，可留空>",
+  "statement": "<用户确认的原话，可留空>",
+  "scope": "mooc.ctt.cn 学时任务自动化",
+  "note": "由阶段 0 写入；已确认后各轮巡检不再重复询问"
+}

@@ -67,6 +67,9 @@ function normalizeSubject(raw) {
   if (!['auto', 'full', 'holdLast', 'skip'].includes(preference)) {
     fail(`专题「${raw.name}」的 preference 非法: ${preference}`);
   }
+  // contributesTo：直接声明该专题结算到哪个口径（key）。
+  // 平台按「专题类型」分账时用这个最准——比用"完成/留尾"推导可靠。见 references/planning-rules.md 第四节。
+  const contributesTo = raw.contributesTo ? String(raw.contributesTo) : null;
   return {
     ...raw,
     hours,
@@ -74,6 +77,7 @@ function normalizeSubject(raw) {
     actualVideoHours,
     requiredCourses,
     preference,
+    contributesTo,
     // 性价比：每看 1 小时视频能换到多少学时
     efficiency: actualVideoHours && actualVideoHours > 0
       ? round1((eligibleHours / actualVideoHours) * 100) / 100
@@ -117,12 +121,35 @@ function buildPlan(input) {
   const fallback = (input.fallback || []).map(normalizeSubject);
   if (!catalog.length && !fallback.length) fail('专题清单为空');
 
-  // 目标是哪个口径 -> 需要该口径的专题用哪种模式
+  // ---- 口径归集：contributesTo（显式） > preference（显式） > 模式推导（默认） ----
   const modeForTarget = {};
   modeForTarget[fullGoesTo] = 'full';
   modeForTarget[holdLastGoesTo] = 'holdLast';
-  // 目标口径与两种模式都不匹配 -> 无法用本算法满足，明确报出来
-  const unmappedTargets = targets.filter(t => !modeForTarget[t.key] && t.gap > 0);
+
+  const targetKeys = new Set(targets.map(t => t.key));
+  const allSubjects = () => [...catalog, ...fallback];
+  for (const s of allSubjects()) {
+    if (s.contributesTo && !targetKeys.has(s.contributesTo)) {
+      fail(`专题「${s.name}」的 contributesTo="${s.contributesTo}" 不在 targets 里`
+        + `（可选：${[...targetKeys].join(', ')}）`);
+    }
+  }
+
+  /** 这条专题结算到哪个口径 */
+  const bucketFor = (s, fallbackMode) => {
+    if (s.contributesTo) return s.contributesTo;
+    if (s.preference === 'full') return fullGoesTo;
+    if (s.preference === 'holdLast') return holdLastGoesTo;
+    return fallbackMode === 'holdLast' ? holdLastGoesTo : fullGoesTo;
+  };
+  /** 这条专题用哪种执行模式（要不要留尾） */
+  const execModeFor = (s, fallbackMode) => {
+    if (s.preference === 'holdLast' || s.preference === 'full') return s.preference;
+    return s.contributesTo ? 'full' : fallbackMode;
+  };
+  /** 该口径能不能被本算法满足：要么它是某个模式的归属，要么有专题显式声明归它 */
+  const servable = t => !!modeForTarget[t.key] || allSubjects().some(s => s.contributesTo === t.key);
+  const unmappedTargets = targets.filter(t => !servable(t) && t.gap > 0);
 
   // 一条专题以某模式计入时，实际贡献多少学时
   const contribute = (s, mode) => {
@@ -138,17 +165,17 @@ function buildPlan(input) {
   const remainingGap = {};
   targets.forEach(t => { remainingGap[t.key] = t.gap; });
 
-  // 先满足缺口大的目标；同缺口时按「网络自学」优先（留尾专题通常体量更大，先定下来更稳）
+  // 先满足缺口大的目标（缺口大的先挑专题，避免被小缺口抢走体量正好的条目）
   const orderedTargets = targets
-    .filter(t => t.gap > 0 && modeForTarget[t.key])
+    .filter(t => t.gap > 0 && servable(t))
     .sort((a, b) => b.gap - a.gap);
 
-  // 候选筛选：未用、偏好兼容、且确定性归属该模式
-  const candidatesFor = (list, src, mode) => list
+  // 候选筛选：未用、没被排除、且确实归到该口径
+  const candidatesFor = (list, src, targetKey, fallbackMode) => list
     .filter(s => !used.has(s.name))
     .filter(s => s.preference !== 'skip')
-    .filter(s => (s.preference === 'auto' ? mode : s.preference) === mode)
-    .map(s => ({ s, src }))
+    .filter(s => bucketFor(s, fallbackMode) === targetKey)
+    .map(s => ({ s, src, mode: execModeFor(s, fallbackMode) }))
     // 性价比高的优先；未知性价比排最后；同档取体量大的（少切专题、少失败点）
     .sort((a, b) => {
       const ea = a.s.efficiency == null ? -1 : a.s.efficiency;
@@ -158,7 +185,7 @@ function buildPlan(input) {
     });
 
   for (const t of orderedTargets) {
-    const mode = modeForTarget[t.key];
+    const fallbackMode = modeForTarget[t.key] || 'full';
     let need = remainingGap[t.key];
 
     // 两趟：先把「主清单」吃干净，只有还缺才动用「兜底池」。
@@ -166,7 +193,7 @@ function buildPlan(input) {
     for (const src of ['catalog', 'fallback']) {
       if (need <= 0) break;
       const list = src === 'catalog' ? catalog : fallback;
-      for (const { s } of candidatesFor(list, src, mode)) {
+      for (const { s, mode } of candidatesFor(list, src, t.key, fallbackMode)) {
         if (need <= 0) break;
         const gain = contribute(s, mode);
         if (gain <= 0) continue;    // 0 学时专题不排（学完也没用）
@@ -176,6 +203,7 @@ function buildPlan(input) {
           name: s.name,
           hash: s.hash,
           mode,
+          contributesTo: s.contributesTo || null,
           hours: s.eligibleHours,
           gain,
           targetKey: t.key,
@@ -183,6 +211,7 @@ function buildPlan(input) {
           source: src,
           efficiency: s.efficiency,
           reason: `补「${t.label}」缺口，${mode === 'holdLast' ? '留尾（保未完成态）' : '学完'}，贡献 ${gain} 学时`
+            + (s.contributesTo ? `（按 contributesTo 显式归到该口径）` : '')
             + (s.efficiency ? `，性价比 ${s.efficiency} 学时/小时` : '，性价比未实测')
             + (src === 'fallback' ? '（主清单已用尽，启用兜底池）' : ''),
         });
@@ -201,8 +230,8 @@ function buildPlan(input) {
       if (s.preference === 'skip') why = 'preference=skip，主动排除';
       else if (s.eligibleHours <= 0) why = '可计入学时为 0（例如选修门槛为 0 学时）';
       else {
-        const settlesTo = s.preference === 'holdLast' ? holdLastGoesTo
-          : s.preference === 'full' ? fullGoesTo : null;
+        const settlesTo = s.contributesTo || (s.preference === 'holdLast' ? holdLastGoesTo
+          : s.preference === 'full' ? fullGoesTo : null);
         if (settlesTo) {
           const tt = targets.find(x => x.key === settlesTo);
           why = remainingGap[settlesTo] <= 0
@@ -216,7 +245,11 @@ function buildPlan(input) {
             : '同口径下排序落后于更划算的专题，未被选中';
         }
       }
-      return { name: s.name, hours: s.eligibleHours, mode: s.preference, source: src, why };
+      return {
+        name: s.name, hash: s.hash, hours: s.eligibleHours,
+        mode: s.contributesTo ? 'full' : s.preference,
+        contributesTo: s.contributesTo || null, source: src, why,
+      };
     });
 
   // 仍缺口的告警
@@ -242,7 +275,11 @@ function buildPlan(input) {
     generatedAt: new Date().toISOString(),
     options: opt,
     settlement: { fullGoesTo, holdLastGoesTo, holdLastContribution },
-    assumptionWarning: holdLastContribution === 'whole'
+    // 输入里可以带 settlement.note（字符串或数组）：把你**实测证实**的记账规则写在这，
+    // 规划书会原样打印给人看。不要让它空着去猜——规则错了整个排期都是白跑。
+    settlementNote: settlement.note || null,
+    // 只有在真的用了留尾模式时，这个假设才值得提醒
+    assumptionWarning: (holdLastContribution === 'whole' && assignments.some(a => a.mode === 'holdLast'))
       ? '「留尾 → 整专题学时全部计入」是待验证假设（H2）。首专题收尾后必须核对学时面板：'
         + '若留尾专题的学时没有全额进账，把 settlement.holdLastContribution 改成 completedOnly 重跑。'
       : null,
@@ -288,10 +325,23 @@ function toQueue(plan) {
     subjects: (plan.executionQueue || plan.queue).map(a => ({
       name: a.name, hash: a.hash, mode: a.mode, source: a.source,
       hours: a.hours, expectedGain: a.gain,
+      // 归集去向写清楚：重排期/事后归因时不用再去翻 plan.json
+      contributesTo: a.contributesTo || null,
+      targetKey: a.targetKey, targetLabel: a.targetLabel,
     })),
     todoFallback: plan.skipped
       .filter(s => s.source === 'fallback' && s.mode !== 'skip')
-      .map(s => ({ name: s.name, hours: s.hours, mode: s.mode, when: s.why })),
+      .map(s => ({
+        name: s.name,
+        // hash 必须带上：引擎切兜底专题时要拿它拼 URL，缺了会切到错误页面
+        hash: s.hash,
+        source: 'fallback',
+        hours: s.hours,
+        mode: s.mode === 'holdLast' ? 'holdLast' : 'full',
+        expectedGain: s.hours,
+        contributesTo: s.contributesTo || null,
+        when: s.why,
+      })),
     finished: [],
     failed: [],
   };
@@ -320,10 +370,21 @@ function toMarkdown(plan) {
   for (const t of plan.targets) L.push(`| ${t.label} | ${t.target} | ${t.done} | ${t.gap} |`);
   L.push('');
 
-  L.push(h('记账规则'), '');
-  L.push(`- **学完整专题** → 计入「${labelOf(plan.settlement.fullGoesTo)}」`);
-  L.push(`- **留最后一个章节不学**（专题保持未完成态） → 计入「${labelOf(plan.settlement.holdLastGoesTo)}」`);
+  L.push(h('口径归集与记账规则'), '');
+  if (plan.settlementNote) {
+    L.push('**本次采用的规则**（来自输入里的 `settlement.note`，应当已用读数实测证实）：', '');
+    for (const line of [].concat(plan.settlementNote)) L.push(`- ${line}`);
+    L.push('');
+  }
+  L.push(`- 默认：学完整专题（\`preference: full\`） → 计入「${labelOf(plan.settlement.fullGoesTo)}」`);
+  L.push(`- 默认：留最后一个章节不学（\`preference: holdLast\`） → 计入「${labelOf(plan.settlement.holdLastGoesTo)}」`);
   L.push(`- 留尾贡献口径：\`${plan.settlement.holdLastContribution}\``);
+  const explicitBucket = plan.executionQueue.filter(a => a.contributesTo);
+  if (explicitBucket.length) {
+    L.push(`- 其中 ${explicitBucket.length} 个专题由输入的 \`contributesTo\` **直接指定**归属口径`
+      + `（平台按「专题类型」分账时用这个最准，不依赖留尾推导）：`);
+    for (const a of explicitBucket) L.push(`  - ${a.name} → 「${a.targetLabel}」`);
+  }
   if (plan.assumptionWarning) L.push(`- ⚠️ ${plan.assumptionWarning}`);
   L.push('');
 
@@ -397,11 +458,17 @@ function demoInput() {
       { key: 'selfStudy', label: '网络自学（时）', target: 50, done: 12.5 },
       { key: 'central', label: '集中培训（时）', target: 90, done: 30.0 },
     ],
-    settlement: { fullGoesTo: 'central', holdLastGoesTo: 'selfStudy' },
+    settlement: {
+      fullGoesTo: 'central',
+      holdLastGoesTo: 'selfStudy',
+      // 实测结论写这里，规划书会原样打印。示例（请换成你自己证实过的规则）：
+      note: '（示例）本平台按「专题类型」分账：网络专题培训类 → 集中培训；网络自学类 → 网络自学。'
+        + '该结论必须用 credit-history 的读数增量与专题完成情况交叉验证过，不要照抄。',
+    },
     catalog: [
       { name: '示例专题 A', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000001', hours: 25.4, requiredCourses: 15, actualVideoHours: 22 },
       { name: '示例专题 B', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000002', hours: 26.4, requiredCourses: 16, actualVideoHours: 19 },
-      { name: '示例专题 C', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000003', hours: 7.3, requiredCourses: 20, actualVideoHours: 6.5 },
+      { name: '示例专题 C（按类型分账，直接指定归属）', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000003', hours: 7.3, requiredCourses: 20, actualVideoHours: 6.5, contributesTo: 'central' },
       { name: '示例专题 D', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000004', hours: 6.3 },
       { name: '示例专题 E', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000005', hours: 6.9 },
       { name: '示例专题 F', hash: '#/study/subject/detail/00000000-0000-4000-8000-000000000006', hours: 6.5 },

@@ -54,10 +54,24 @@ function detectBrowserExe() {
 }
 
 /**
+ * 默认运行时目录：`~/.course-autopilot`（宿主无关）。
+ * 兼容旧位置：若新目录还不存在、而旧目录存在，则继续用旧的，避免升级后"状态凭空消失"。
+ * 放哪儿最省事：如果宿主有沙箱/写权限限制，把它放进宿主的工作区内可以少踩很多坑。
+ */
+function defaultRunDir() {
+  const fresh = path.join(os.homedir(), '.course-autopilot');
+  const legacy = path.join(os.homedir(), '.workbuddy', 'course-autopilot');
+  try {
+    if (!fs.existsSync(fresh) && fs.existsSync(legacy)) return legacy;
+  } catch { /* ignore */ }
+  return fresh;
+}
+
+/**
  * 定位 puppeteer-core。按以下顺序尝试，任一命中即可：
  *   1. 常规 require 解析（项目内 node_modules / NODE_PATH）
- *   2. WorkBuddy 托管目录 ~/.workbuddy/binaries/node/workspace/node_modules
- *   3. AUTOPILOT_PUPPETEER 指定的绝对路径
+ *   2. AUTOPILOT_PUPPETEER 指定的绝对路径
+ *   3. 部分宿主自带的托管目录（示例：<home>/.workbuddy/binaries/node/workspace/node_modules）
  * 不下载浏览器：puppeteer-core 复用本机已装的 Edge/Chrome。
  */
 function loadPuppeteer() {
@@ -70,7 +84,7 @@ function loadPuppeteer() {
   }
   throw new Error(
     '找不到 puppeteer-core。请任选一种方式安装：\n' +
-    '  · 在运行时目录执行  npm i puppeteer-core --no-audit --no-fund\n' +
+    '  · 在技能目录执行  npm i puppeteer-core --no-audit --no-fund\n' +
     '  · 或设置环境变量 AUTOPILOT_PUPPETEER=<puppeteer-core 绝对路径>\n' +
     '注意用 puppeteer-core（不下载浏览器），不要用 puppeteer。'
   );
@@ -78,8 +92,7 @@ function loadPuppeteer() {
 
 function resolveConfig(argv = process.argv.slice(2)) {
   const dir = path.resolve(
-    argValue(argv, '--dir') || process.env.AUTOPILOT_DIR ||
-    path.join(os.homedir(), '.workbuddy', 'course-autopilot')
+    argValue(argv, '--dir') || process.env.AUTOPILOT_DIR || defaultRunDir()
   );
   const adapterId = argValue(argv, '--adapter') || process.env.AUTOPILOT_ADAPTER || 'mooc-ctt-cn';
   const cdpPort = parseInt(argValue(argv, '--port') || process.env.AUTOPILOT_CDP_PORT || '9222', 10);

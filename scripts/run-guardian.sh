@@ -13,6 +13,14 @@
 # 用法：
 #   sh run-guardian.sh [--adapter <id>] [--dir <运行时目录>] [--port <端口>]
 #
+# ⚠️ 这个包装脚本是「有则更好」，不是必需：
+#   · Windows 上如果没有 Git Bash / MSYS，或宿主沙箱禁止创建命名管道
+#     （现象：bash.exe: couldn't create signal pipe, Win32 error 5），它根本起不来。
+#   · 这时直接调引擎即可，等价：
+#       node scripts/engine/guardian.js --dir <运行时目录> --adapter <平台id>
+#   它存在的意义只有两个：清代理变量、定位 node。环境里没代理且 node 在 PATH 时，
+#   直接用 node 完全没有区别。
+#
 # 环境变量：
 #   AUTOPILOT_DIR / AUTOPILOT_ADAPTER / AUTOPILOT_CDP_PORT
 #   NODE_BIN      指定 node 可执行文件（默认自动探测）
@@ -22,7 +30,7 @@ HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
 # --- 清代理：必须在脚本内 unset，不能依赖 env ---
 unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
 
-# --- 定位 node：显式指定 > PATH > WorkBuddy 托管目录 ---
+# --- 定位 node：显式指定 > PATH > 宿主自带托管目录（示例路径，按自己环境改） ---
 if [ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ]; then
   NODE="$NODE_BIN"
 elif command -v node >/dev/null 2>&1; then

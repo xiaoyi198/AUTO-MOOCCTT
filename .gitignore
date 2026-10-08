@@ -4,6 +4,7 @@ node_modules/
 # 运行时目录（状态/日志/锁/浏览器 profile，包含登录态，绝对不能提交）
 browser-profile/
 browser-profile-experiment/
+consent.json
 learn-state.json
 learn-state.json.bak
 subject-queue.json
@@ -18,6 +19,15 @@ evidence/
 plan.json
 plan.md
 plan-input.json
+# 常驻守护（keeper）运行时产物
+keeper.log
+keeper-heartbeat.json
+keeper-console.log
+keeper-launch.lock
+guardian-round.log
+browser-pid.json
+recon-*.json
+*.bak
 *.tmp
 
 # 系统

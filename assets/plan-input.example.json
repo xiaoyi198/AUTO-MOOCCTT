@@ -5,6 +5,10 @@
     "字段含义见 references/planning-rules.md。",
     "关键：eligibleHours 只填【必须要学】的课对应学时——选修门槛为 0 学时时，选修学时不算。",
     "关键：actualVideoHours 是实测播放时长，用于性价比排序；没测过就留空（会被标注'未实测'）。",
+    "关键：口径归集方式必须先实测证实（见 SKILL.md 铁律 9 / references/planning-rules.md 第四、五节）。",
+    "  · 平台按【完成状态】分账 → 用 preference: full / holdLast；",
+    "  · 平台按【专题类型】分账 → 给每个专题标 contributesTo，别用留尾去凑另一个口径。",
+    "把证实过的规则写进 settlement.note，规划书会原样打印给人看。",
     "注意：下面所有专题名、学时时长与 UUID 均为占位示例，请替换为你自己探测到的真实值。"
   ],
 
@@ -16,7 +20,8 @@
   "settlement": {
     "fullGoesTo": "central",
     "holdLastGoesTo": "selfStudy",
-    "holdLastContribution": "whole"
+    "holdLastContribution": "whole",
+    "note": "（示例）把你实测证实的口径归集规则写在这里，例如：某类专题学完计入某口径；另一类只按观看进度计入另一口径。"
   },
 
   "catalog": [
@@ -43,7 +48,7 @@
       "hours": 23.9,
       "eligibleHours": 6.1,
       "requiredCourses": 2,
-      "preference": "full"
+      "contributesTo": "central"
     },
     {
       "name": "示例专题 D",

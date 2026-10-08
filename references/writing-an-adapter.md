@@ -10,6 +10,9 @@
       node scripts/engine/launch.js
 2. 逐项侦察（每个字段都要实测，不许猜）
       node scripts/probe.js tabs / video / credit / cards / modals / nav
+      # 想批量盘点专题库（重排期时要用）：
+      node scripts/recon-subjects.js catalog --pages 6
+      node scripts/recon-subjects.js subject "<某个专题详情页 URL>"
 3. 复制模板填空
       cp scripts/adapters/_template.js scripts/adapters/<平台id>.js
 4. 单轮试跑（先加 --no-launch，避免它自己开浏览器）

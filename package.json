@@ -1,14 +1,18 @@
 {
   "name": "course-hours-autopilot",
-  "version": "0.2.0",
-  "description": "模型辅助型学时自动化值守 Skill：Skill 提供示例脚本，模型探测并完善，确定性引擎无人值守执行。",
+  "version": "0.3.0",
+  "description": "模型辅助型学时自动化值守 Skill：先取得免责声明确认，再由模型探测并完善脚本，最后由确定性引擎无人值守执行。只面向 mooc.ctt.cn。",
   "license": "MIT",
   "scripts": {
     "launch": "node scripts/engine/launch.js",
     "status": "node scripts/engine/launch.js --status",
     "kill": "node scripts/engine/launch.js --kill",
+    "health": "node scripts/engine/cdp-health.js",
+    "keeper": "node scripts/engine/keeper.js",
+    "guardian": "node scripts/engine/guardian.js",
+    "guardian:sh": "sh scripts/run-guardian.sh",
     "demo": "node scripts/plan.js --demo",
-    "guardian": "sh scripts/run-guardian.sh"
+    "plan": "node scripts/plan.js"
   },
   "dependencies": {
     "puppeteer-core": ">=21"

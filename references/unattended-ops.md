@@ -2,19 +2,22 @@
 
 适用：跑几小时到几天、没人看着的任务。核心不是"会自动重试"，而是**逐场景兜底**。
 
-## 一、触发方式：为什么必须是「自续期的一次性任务链」
+## 一、触发方式：先看宿主调度能力，再选型
 
-### 调度器的硬限制（实测，别试了）
+**别照抄任何一种做法** —— 先确认宿主的定时能力到什么粒度：
 
-| 尝试 | 结果 |
-|---|---|
-| `FREQ=MINUTELY` | **不支持** |
-| `BYHOUR=0,1,2,...` | 逗号列表**报错** |
-| `BYMINUTE=0,15,30,45` | ❌ **实际不生效**。首次触发被算成"创建时间 +1 小时"，退化成整点 |
-| `BYMINUTE=15` 单值 | ❌ 同样不生效 |
-| `FREQ=HOURLY;INTERVAL=1` | ✅ 可用，但只有 1 小时精度 |
+| 宿主能力 | 选型 | 为什么 |
+|---|---|---|
+| 支持分钟级间隔（如 `interval: 15min` / `everyMinutes`） | **直接建两条循环任务**：15 分钟主巡检 + 每小时兜底 | 结构最简单，**没有"链断了没人发现"这个失效模式** |
+| 只有小时级（cron 型，不支持 `FREQ=MINUTELY` 等） | **自续期的一次性任务链** + 每小时兜底 | 被宿主能力逼出来的方案，见下 |
 
-**结论：想要 15 分钟精度，只能用「自我续期的一次性任务链」。**
+> 某宿主（cron 型）实测限制，供对照：`FREQ=MINUTELY` 不支持；`BYHOUR=0,1,2,...` 逗号列表报错；
+> `BYMINUTE=0,15,30,45` 与单值 `BYMINUTE=15` **都不生效**（首次触发被算成"创建时间 +1 小时"，
+> 退化成整点）；只有 `FREQ=HOURLY;INTERVAL=1` 可用，即 1 小时精度。
+> 只有这类宿主才需要下面的链式方案。
+
+### 自续期任务链（仅当宿主没有分钟级间隔时）
+
 创建 `scheduleType:"once"` + `scheduledAt:<15分钟后>` 的任务，其 prompt 里写明
 "执行完立刻再创建一个 15 分钟后的一次性任务，prompt 原样复制自身"，链到 `ALL_DONE` 时停止；
 **同时另挂一条 `FREQ=HOURLY;INTERVAL=1` 的循环任务做兜底**，防链条断裂。
@@ -51,14 +54,14 @@
 ```python
 # 只读打开，不要写
 import sqlite3
-con = sqlite3.connect("file:<用户目录>/.workbuddy/workbuddy.db?mode=ro", uri=True)
+con = sqlite3.connect("file:<用户目录>/<宿主数据目录>/<宿主调度库>.db?mode=ro", uri=True)
 con.execute("select id,name,scheduled_at,next_run_at,created_at,deleted_at from automations "
             "order by created_at desc limit 10").fetchall()
 con.execute("select id,name,scheduled_at from automations where deleted_at is null").fetchall()
 ```
 判据：最新一环的 `created_at` 附近**没有**新环被建出来，且存活列表里只剩常驻任务。
 `automation_runtime_state.running` 可看某环此刻是否真在跑。
-日志旁证：`~/.workbuddy/logs/automation.log` 有 dispatch / run finished / failed。
+日志旁证：宿主自己的调度日志（示例：`<用户目录>/.workbuddy/logs/automation.log`）有 dispatch / run finished / failed。
 
 **修复（顺序别反）**：
 - 从**上一环的原始 prompt** 逐字取模板。最省事的做法是预先在规划阶段就把模板另存到运行时目录
@@ -66,6 +69,47 @@ con.execute("select id,name,scheduled_at from automations where deleted_at is nu
   避免兜底任务的 prompt 里没内嵌模板时无源可取。
 - 新建 `+15 分钟` 的一环 → 删掉过期环 → 复核只留 1 条。
 - 若断链空档里目标刚好会推进（视频即将播完），可**额外补跑一次守护命令**弥合；否则不必。
+
+### 执行力：为什么还需要一个常驻 keeper
+
+定时任务解决的是「谁来定期看一眼」，**不解决「浏览器怎么一直活着」**。
+
+引擎是「跑一轮就退出」的设计，视频能连着播，全靠浏览器那个进程还在。
+但很多 Agent 运行环境会在**一次工具调用结束时回收该调用启动的全部后代进程** ——
+症状是"调用内 CDP 就绪，下一次调用再探已离线"，于是每个周期只播了几秒钟，看着在跑其实原地踏步。
+
+⇒ 用 `scripts/engine/keeper.js` 常驻持有浏览器，并由它按间隔触发引擎：
+
+```sh
+# Windows：双击（进程归桌面会话所有，不受 Agent 沙箱管辖）
+scripts\start-keeper.bat
+# macOS / Linux
+sh scripts/start-keeper.sh
+```
+
+- 它每 20 秒探一次 CDP 端口，掉了就自己拉起来（带单例锁，避免两个 keeper 抢同一 profile）；
+- 每 N 分钟（默认 15）跑一轮 `guardian.js`，**输出重定向到 `guardian-round.log`**（沙箱下 piped stdio 可能 EPERM）；
+- 每 ~2 分钟做一次"体检"：CDP 端口在线 ≠ 能用，见下一节；
+- 写 `keeper.log` 与 `keeper-heartbeat.json`。**判活就看 `at` 是否新鲜**（超过 10 分钟 = 挂了，要请用户重启）。
+
+**让用户手工双击而不是由 Agent 拉起，还有第二个好处**：沙箱往往掐断 Chromium 的内部 IPC（见下），
+而用户双击起来的进程不在沙箱里。
+
+### 沙箱掐断 Chromium 内部 IPC：一种极像"脚本挂了"的故障
+
+某些沙箱禁止程序打开**命名管道**，而 Windows 上 Chromium 的 browser↔renderer 通信正走命名管道。
+于是受管浏览器会出现这种组合：
+
+| 现象 | 含义 |
+|---|---|
+| `connect()` 一两百毫秒成功 | WebSocket 握手正常 |
+| 浏览器级 CDP（`Browser.getVersion`）几毫秒就回 | 浏览器主进程活着 |
+| **页面级 CDP（`Runtime.evaluate` / `Page.enable`）永久无响应** | 渲染进程被冻住 |
+| 窗口一片白 | 页面根本没渲染出来 |
+
+⇒ 判定用 `node scripts/engine/cdp-health.js --dir <运行时目录>`，**别靠猜**。
+⇒ 处理：**让受管浏览器跑在沙箱之外**（用户双击 keeper 即满足）；客户端可以留在沙箱内，
+   因为它只是经 TCP 连 `127.0.0.1:<port>`。
 
 ## 二、故障场景 → 自修复动作
 
@@ -92,6 +136,11 @@ con.execute("select id,name,scheduled_at from automations where deleted_at is nu
 | 18 | 定时任务无限堆积 | 每轮先自清理过期任务 |
 | 19 | 电脑休眠导致全停 | 先查 `powercfg /q SCHEME_CURRENT SUB_SLEEP STANDBYIDLE`：交流电索引 0 = 从不睡眠 |
 | 20 | 日志无限增长 | 约 100KB/天，数周内无风险（未加轮转） |
+| 21 | 浏览器被宿主回收（每个周期只播几秒，看着在跑实则原地踏步） | 由常驻 keeper 持有浏览器，见第一节「执行力」 |
+| 22 | CDP 命令永久挂起 / 浏览器窗口白屏 | 渲染进程被沙箱冻住 → `cdp-health.js` 判定 → 让浏览器跑在沙箱之外 |
+| 23 | keeper 自己挂了 | 心跳 `keeper-heartbeat.json` 不再更新 → 兜底巡检发现并通知用户重启 |
+| 24 | Git Bash 起不来（`couldn't create signal pipe`） | 别用 `run-guardian.sh`，直接 `node scripts/engine/guardian.js` |
+| 25 | 两个 keeper 抢同一 profile / 被强杀留下半死实例 | keeper 内部：`wx` 锁 + 端口双检；体检发现挂死则杀掉自己记录在 `browser-pid.json` 的进程树后重拉 |
 
 ## 三、抢焦点：一条很容易搞错的规则
 
@@ -145,9 +194,12 @@ Windows 中文用户名（如 `C:\Users\家\`）下：
 
 **可用方式**：
 - 本轮内：后台方式启动，可稳定存活数分钟，足够跑完一轮巡检。
-- **跨轮持续（最可靠）**：Node 侧 `child_process.spawn(exe, args, { detached: true, stdio: 'ignore' })`
-  + `p.unref()`。已实测：独立端口 + 独立 user-data-dir 拉起，8 秒内 CDP 就绪。
-- 用户侧：让用户双击一个 `.bat` 启动，进程由 explorer 创建，脱离沙箱管辖。
+- Node 侧 `child_process.spawn(exe, args, { detached: true, stdio: 'ignore' })` + `p.unref()`：
+  在部分宿主上够用，**但不是万能** —— 实测仍有宿主会在工具调用结束时把它一起回收。
+  判定：调用内 CDP 就绪，下一次调用再探已离线。
+- **跨轮持续（最可靠）**：让用户双击 `scripts/start-keeper.bat`（POSIX 用 `start-keeper.sh`），
+  由这个常驻 keeper 持有浏览器并按间隔触发引擎 —— 进程归桌面会话所有，脱离沙箱管辖。
+  这也是本技能推荐的做法，详见第一节「执行力」。
 
 ## 五、反挂机加固
 
